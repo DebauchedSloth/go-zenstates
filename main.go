@@ -8,7 +8,7 @@ import (
 	"strconv"
 )
 
-var listFlag, pstateEnable, pstateDisable bool
+var listFlag, pstateEnable, pstateDisable, c6Enable, c6Disable bool
 var pstateFlag int
 var fidFlag, didFlag, vidFlag uint64
 var pstates = [...]int64{
@@ -31,15 +31,30 @@ func initFlags() {
 	flag.Uint64Var(&fidFlag, "fid", 0, "FID to set (hex)")
 	flag.Uint64Var(&didFlag, "did", 0, "DID to set (hex)")
 	flag.Uint64Var(&vidFlag, "vid", 0, "VID to set (hex)")
+	flag.BoolVar(&c6Enable, "c6-enable", false, "Enable C6")
+	flag.BoolVar(&c6Disable, "c6-disable", false, "Disable C6")
 	flag.Parse()
 }
 
 func main() {
 	initFlags()
 	if listFlag {
-		for _, pstate := range pstates {
-			fmt.Println(pstateToString(readMSR(pstate)))
+		for index, pstate := range pstates {
+			var v = readMSR(pstate)
+			if hasBit(v, 63) {
+				fmt.Printf("P%d - %s\n", index, pstateToString(v))
+			}
 		}
+		var packageC6 = "Disabled"
+		var coreC6 = "Disabled"
+		if readMSR(0xC0010292) & (1 << 32) != 0 {
+			packageC6 = "Enabled"
+		}
+		if readMSR(0xC0010296) & ((1 << 22) | (1 << 14) | (1 << 6)) == ((1 << 22) | (1 << 14) | (1 << 6)) {
+			coreC6 = "Enabled"
+		}
+		fmt.Printf("C6 State - Package - %s\n", packageC6)
+		fmt.Printf("C6 State - Core - %s\n", coreC6)
 	}
 	if pstateFlag >= 0 && pstateFlag < 8 {
 		msrValue := readMSR(pstates[0])
@@ -74,6 +89,16 @@ func main() {
 			writeMSR(pstates[pstateFlag], newMSR)
 			fmt.Printf("New pstate%d: %v\n", pstateFlag, pstateToString(readMSR(pstates[pstateFlag])))
 		}
+	}
+	if c6Enable {
+		writeMSR(0xC0010292, readMSR(0xC0010292) | (1 << 32))
+		writeMSR(0xC0010296, readMSR(0xC0010296) | ((1 << 22) | (1 << 14) | (1 << 6)))
+		fmt.Println("C6 Enabled")
+	}
+	if c6Disable {
+		writeMSR(0xC0010292, readMSR(0xC0010292) &^ (1 << 32))
+		writeMSR(0xC0010296, readMSR(0xC0010296) &^ ((1 << 22) | (1 << 14) | (1 << 6)))
+		fmt.Println("C6 Disabled")
 	}
 }
 
